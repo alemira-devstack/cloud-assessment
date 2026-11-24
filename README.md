@@ -135,6 +135,17 @@ docker compose down -v
 
 ## Local cluster
 
+Terraform creates the cluster and installs Argo CD, KEDA, Prometheus, and Grafana. Argo CD installs Redis, the producer, the worker, and the scale rule from Git. The scale signal is the Redis list length, not CPU, because the worker sleeps for 2 seconds per job.
+
+500 jobs in test. The list threshold is 50, the minimum is 1, and the maximum is 10. Recorded worker replicas:
+
+> worker 10/10
+> worker 8/8
+> worker 6/6
+> worker 4/4
+> worker 3/3
+> worker 1/1
+
 The install guide is [SETUP.md](SETUP.md). From the repository root:
 
 ```sh
