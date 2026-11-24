@@ -1,0 +1,5 @@
+producer:
+  replicas: 1
+
+worker:
+  replicas: 1

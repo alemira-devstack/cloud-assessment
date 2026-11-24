@@ -1,0 +1,20 @@
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: assessment-prod
+  namespace: argocd
+spec:
+  project: default
+  source:
+    repoURL: https://github.com/alemira-devstack/cloud-assessment.git
+    targetRevision: main
+    path: charts/assessment
+    helm:
+      valueFiles:
+        - values-prod.yaml
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: prod
+  syncPolicy:
+    syncOptions:
+      - CreateNamespace=true

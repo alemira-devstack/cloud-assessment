@@ -79,9 +79,11 @@ There are no published images. To build them, run these commands in this directo
 of your machine.
 
 ```sh
-docker build -f Dockerfile.producer -t assessment-producer:1.0.0 .
-docker build -f Dockerfile.worker -t assessment-worker:1.0.0 .
+docker build -f Dockerfile.producer -t assessment-producer:1.0.0 --provenance=false --sbom=false .
+docker build -f Dockerfile.worker -t assessment-worker:1.0.0 --provenance=false --sbom=false .
 ```
+
+`--provenance=false` and `--sbom=false` keep the image loadable by `k3d image import`.
 
 The images use `gcr.io/distroless/static-debian12:nonroot`. They run as the numeric user `65532` and contain no shell.
 
@@ -130,3 +132,137 @@ docker compose down -v
   exits. It logs when shutdown starts and when the jobs in progress are finished. This takes up to `JOB_DURATION`, plus
   up to 1 second for an idle wait on the list to return. If the process is killed before that, the jobs in progress are
   lost. The producer stops at once on `SIGTERM`.
+
+## Local cluster
+
+Tools: Docker, Terraform, k3d, kubectl. Run the commands from the `terraform` folder.
+
+`terraform apply` creates the k3d cluster `assessment`, writes `.kube/config` in this repository, and installs Argo CD.
+
+### terraform version
+
+`versions.tf` requires Terraform 1.5.0 or newer.
+
+```sh
+terraform version
+```
+
+Expected:
+
+> Terraform v1.17.2
+> on windows_amd64
+
+### terraform init
+
+```sh
+terraform init
+```
+
+Expected:
+
+> Terraform has been successfully initialized!
+
+### terraform apply
+
+```sh
+terraform apply
+```
+
+Expected:
+
+> Plan: 2 to add, 0 to change, 0 to destroy.
+> Apply complete! Resources: 2 added, 0 changed, 0 destroyed.
+
+### kubectl get nodes
+
+```sh
+kubectl --kubeconfig ../.kube/config get nodes
+```
+
+Expected:
+
+> NAME                      STATUS   ROLES           AGE   VERSION
+> k3d-assessment-server-0   Ready    control-plane   12m   v1.35.5+k3s1
+
+`STATUS` must be `Ready`. Age and version can differ.
+
+### kubectl get pods -n argocd
+
+```sh
+kubectl --kubeconfig ../.kube/config get pods -n argocd
+```
+
+Expected:
+
+> NAME                                                READY   STATUS    RESTARTS   AGE
+> argocd-application-controller-0                     1/1     Running   0          3m56s
+> argocd-applicationset-controller-6f9998557f-77llt   1/1     Running   0          3m56s
+> argocd-dex-server-6987d99d7f-8ngss                  1/1     Running   0          3m56s
+> argocd-notifications-controller-667c5d7b9f-ks7vr    1/1     Running   0          3m56s
+> argocd-redis-597f5c54f4-nj4ns                       1/1     Running   0          3m56s
+> argocd-repo-server-7bb54d7dd5-zzs99                 1/1     Running   0          3m56s
+> argocd-server-5bcc8bd7db-4ghrr                      1/1     Running   0          3m56s
+
+Every pod is `Running` and `1/1`. The suffix and the age can differ. `argocd-redis` belongs to Argo CD. The producer and the worker are not deployed.
+
+### k3d image import
+
+Run this from the repository root after the images are built. The tag is `1.0.0`. The images are loaded into the `assessment` node because there is no registry.
+
+```sh
+k3d image import assessment-producer:1.0.0 --cluster assessment --mode direct
+k3d image import assessment-worker:1.0.0 --cluster assessment --mode direct
+```
+
+Expected:
+
+> Successfully imported 1 image(s) into 1 cluster(s)
+
+### sed, only if get nodes cannot connect
+
+This replaces `host.docker.internal` with `127.0.0.1` in `.kube/config` inside this repository.
+
+```sh
+sed -i 's/host.docker.internal/127.0.0.1/' ../.kube/config
+kubectl --kubeconfig ../.kube/config get nodes
+```
+
+Expected result: the same `Ready` node as above.
+
+### terraform destroy
+
+```sh
+terraform destroy
+```
+
+Expected:
+
+> Destroy complete! Resources: 2 destroyed.
+
+### Optional
+
+```sh
+grep server ../.kube/config
+```
+
+Expected:
+
+> server: https://127.0.0.1:59280
+
+The port can differ.
+
+```sh
+kubectl config current-context
+```
+
+Expected:
+
+> error: current-context is not set
+
+This reads `~/.kube/config` and must not print `k3d-assessment`.
+
+```sh
+kubectl --kubeconfig ../.kube/config get pods -A
+```
+
+This lists `kube-system` and `argocd`. The producer and the worker are not deployed.

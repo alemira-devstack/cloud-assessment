@@ -1,0 +1,6 @@
+apiVersion: v2
+name: assessment
+description: Producer, worker, and one Redis list per namespace
+type: application
+version: 1.0.0
+appVersion: "1.0.0"

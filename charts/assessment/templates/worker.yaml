@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker
+spec:
+  replicas: {{ .Values.worker.replicas }}
+  selector:
+    matchLabels:
+      app: worker
+  template:
+    metadata:
+      labels:
+        app: worker
+    spec:
+      containers:
+        - name: worker
+          image: {{ .Values.worker.image | quote }}
+          imagePullPolicy: {{ .Values.imagePullPolicy }}
+          ports:
+            - containerPort: 8080
+          env:
+            - name: REDIS_ADDR
+              value: {{ .Values.env.redisAddr | quote }}
+            - name: QUEUE_NAME
+              value: {{ .Values.env.queueName | quote }}
+            - name: JOB_DURATION
+              value: {{ .Values.env.jobDuration | quote }}
+            - name: WORKER_CONCURRENCY
+              value: {{ .Values.env.workerConcurrency | quote }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: worker
+spec:
+  selector:
+    app: worker
+  ports:
+    - port: 8080
+      targetPort: 8080

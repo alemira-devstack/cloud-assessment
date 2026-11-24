@@ -1,0 +1,19 @@
+imagePullPolicy: IfNotPresent
+
+producer:
+  image: assessment-producer:1.0.0
+  replicas: 1
+
+worker:
+  image: assessment-worker:1.0.0
+  replicas: 1
+
+redis:
+  image: redis:7-alpine
+
+env:
+  redisAddr: redis:6379
+  queueName: jobs
+  produceRate: "0"
+  jobDuration: 2s
+  workerConcurrency: "1"
