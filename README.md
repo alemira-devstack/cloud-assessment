@@ -137,7 +137,58 @@ docker compose down -v
 
 Tools: Docker, Terraform, Helm, k3d, kubectl. Run the commands from the `terraform` folder, except the image import.
 
-`terraform apply` creates the k3d cluster `assessment`, writes `.kube/config` in this repository, and installs Argo CD.
+`terraform apply` creates the k3d cluster `assessment`, writes `.kube/config` in this repository, and installs Argo CD and KEDA.
+
+Terraform creates the cluster and installs Argo CD and KEDA. Argo CD installs Redis, the producer, the worker, and the ScaledObject, because test and prod sync differently and the scale rule is per environment.
+
+```mermaid
+%%{init: {'flowchart': {'curve': 'stepAfter'}}}%%
+flowchart TB
+  TF[terraform apply]
+  TF --> K3D[k3d cluster assessment]
+  TF --> ARGO[Argo CD]
+  TF --> KEDA[KEDA]
+  GIT[GitHub charts/assessment] --> ARGO
+
+  subgraph envs [ ]
+    direction LR
+    subgraph TEST [namespace test automatic sync]
+      RT[Redis list jobs]
+      PT[producer]
+      WT[worker]
+      SO[ScaledObject]
+      PT -->|LPUSH| RT
+      WT -->|BRPOP| RT
+      SO -->|count jobs| RT
+      SO -->|set replicas| WT
+    end
+    subgraph PROD [namespace prod manual sync]
+      RP[Redis list jobs]
+      PP[producer]
+      WP[worker]
+      SOP[ScaledObject]
+      PP -->|LPUSH| RP
+      WP -->|BRPOP| RP
+      SOP -->|count jobs| RP
+      SOP -->|set replicas| WP
+    end
+  end
+
+  ARGO --> TEST
+  ARGO --> PROD
+  KEDA --> SO
+  KEDA --> SOP
+```
+
+KEDA changes only the worker replica count. The producer and Redis stay at one replica. `prod` gets the same chart only after a manual sync, so it has its own Redis list.
+
+### Quick start
+
+On a clean machine, this script builds the images, creates the cluster, installs Argo CD and KEDA, loads the images, and registers the test and prod Applications. The commands below are the same steps one by one. The 500-job test is not part of this script.
+
+```sh
+bash scripts/quickstart.sh
+```
 
 ### terraform version
 
@@ -263,6 +314,69 @@ Expected:
 > producer-6db88f774c-rldcw   1/1     Running   0          17s
 > redis-c46d5dffc-lvvfm       1/1     Running   0          17s
 > worker-86b8487c-hmdwj       1/1     Running   0          17s
+
+### 500 jobs in test
+
+Run these from the repository root and leave the port-forward running. The signal is the Redis list `jobs`, not CPU: listLength 50, min 1, max 10, so 500/50 reaches 10 and an empty list returns to 1.
+
+```sh
+kubectl --kubeconfig .kube/config port-forward -n test svc/producer 8080:8080
+```
+
+```sh
+curl -s -X POST "http://127.0.0.1:8080/jobs?count=500"
+```
+
+Expected:
+
+> {"enqueued":500,"queue_depth":500}
+
+```sh
+kubectl --kubeconfig .kube/config get deploy worker -n test -w
+```
+
+Expected:
+
+> worker 10/10
+> worker 8/8
+> worker 6/6
+> worker 4/4
+> worker 3/3
+> worker 1/1
+
+### Local cluster behaviour
+
+- Signal. KEDA counts the Redis list jobs. The worker sleeps for JOB_DURATION, so CPU stays near zero and a CPU autoscaler would not change the replica count.
+- Worker only. The ScaledObject targets the worker Deployment. The producer and Redis stay at one replica.
+- Thresholds. listLength is 50, minimum is 1, maximum is 10, cooldown is 180 seconds. 500 waiting jobs reach 10 replicas. An empty list returns the count to 1.
+- Where it runs. The scale rule is in the chart. test receives it on automatic sync. prod receives it only after a manual sync.
+
+### Optional: prod
+
+The kubeconfig stays `.kube/config`. Replace `-n test` with `-n prod`. `prod` does not sync until you start it.
+
+```sh
+kubectl --kubeconfig .kube/config patch application assessment-prod -n argocd --type merge -p '{"operation":{"sync":{"revision":"HEAD"}}}'
+kubectl --kubeconfig .kube/config get applications -n argocd
+kubectl --kubeconfig .kube/config get pods -n prod
+```
+
+Expected:
+
+> assessment-prod   Synced
+> producer, redis, and worker Running in prod
+
+`prod` has its own Redis list. A later manual sync sets the worker replica count back to 1. `test` ignores that field.
+
+To send jobs to prod without using port 8080:
+
+```sh
+kubectl --kubeconfig .kube/config port-forward -n prod svc/producer 8090:8080
+```
+
+```sh
+curl -s -X POST "http://127.0.0.1:8090/jobs?count=50"
+```
 
 ### sed, only if get nodes cannot connect
 
