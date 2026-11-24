@@ -1,0 +1,17 @@
+apiVersion: keda.sh/v1alpha1
+kind: ScaledObject
+metadata:
+  name: worker
+spec:
+  scaleTargetRef:
+    name: worker
+  minReplicaCount: 1
+  maxReplicaCount: 10
+  cooldownPeriod: 180
+  pollingInterval: 15
+  triggers:
+    - type: redis
+      metadata:
+        address: redis.{{ .Release.Namespace }}.svc.cluster.local:6379
+        listName: {{ .Values.env.queueName | quote }}
+        listLength: "50"
