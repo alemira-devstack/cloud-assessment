@@ -1,0 +1,39 @@
+services:
+  redis:
+    image: redis:7-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 10
+
+  producer:
+    build:
+      context: .
+      dockerfile: Dockerfile.producer
+    image: assessment-producer:dev
+    environment:
+      REDIS_ADDR: redis:6379
+      QUEUE_NAME: jobs
+      PRODUCE_RATE: "0"
+    ports:
+      - "8080:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    image: assessment-worker:dev
+    environment:
+      REDIS_ADDR: redis:6379
+      QUEUE_NAME: jobs
+      JOB_DURATION: 2s
+      WORKER_CONCURRENCY: "1"
+    ports:
+      - "8082:8080"
+    depends_on:
+      redis:
+        condition: service_healthy
