@@ -95,7 +95,7 @@ Docker Compose starts Redis, one producer and one worker. It builds the images i
 docker compose up --build -d
 ```
 
-On your machine, the producer is on port 8080 and the worker is on port 8081.
+On your machine, the producer is on port 8080 and the worker is on port 8082.
 
 Put 50 jobs on the list:
 
@@ -107,7 +107,7 @@ Watch the list become empty:
 
 ```sh
 curl -s localhost:8080/metrics | grep assessment_queue_depth
-curl -s localhost:8081/metrics | grep assessment_jobs
+curl -s localhost:8082/metrics | grep assessment_jobs
 docker compose logs -f worker
 docker compose exec redis redis-cli LLEN jobs
 ```
@@ -135,7 +135,7 @@ docker compose down -v
 
 ## Local cluster
 
-Tools: Docker, Terraform, k3d, kubectl. Run the commands from the `terraform` folder.
+Tools: Docker, Terraform, Helm, k3d, kubectl. Run the commands from the `terraform` folder, except the image import.
 
 `terraform apply` creates the k3d cluster `assessment`, writes `.kube/config` in this repository, and installs Argo CD.
 
@@ -147,7 +147,7 @@ Tools: Docker, Terraform, k3d, kubectl. Run the commands from the `terraform` fo
 terraform version
 ```
 
-Expected:
+The version must be 1.5.0 or newer. On this PC the result is:
 
 > Terraform v1.17.2
 > on windows_amd64
@@ -170,8 +170,8 @@ terraform apply
 
 Expected:
 
-> Plan: 2 to add, 0 to change, 0 to destroy.
-> Apply complete! Resources: 2 added, 0 changed, 0 destroyed.
+> Plan: 3 to add, 0 to change, 0 to destroy.
+> Apply complete! Resources: 3 added, 0 changed, 0 destroyed.
 
 ### kubectl get nodes
 
@@ -205,6 +205,23 @@ Expected:
 
 Every pod is `Running` and `1/1`. The suffix and the age can differ. `argocd-redis` belongs to Argo CD. The producer and the worker are not deployed.
 
+### kubectl get pods -n keda
+
+KEDA is the autoscaler. The worker sleeps, so CPU does not rise with the queue.
+
+```sh
+kubectl --kubeconfig ../.kube/config get pods -n keda
+```
+
+Expected:
+
+> NAME                                               READY   STATUS    RESTARTS   AGE
+> keda-admission-webhooks-7b9bcf8654-858rs           1/1     Running   0          80s
+> keda-operator-58676658b-vhpt5                      1/1     Running   0          80s
+> keda-operator-metrics-apiserver-6959bf9d7d-lcxj6   1/1     Running   0          80s
+
+Every pod is `Running` and `1/1`. The suffix, the restart count, and the age can differ.
+
 ### k3d image import
 
 Run this from the repository root after the images are built. The tag is `1.0.0`. The images are loaded into the `assessment` node because there is no registry.
@@ -217,6 +234,35 @@ k3d image import assessment-worker:1.0.0 --cluster assessment --mode direct
 Expected:
 
 > Successfully imported 1 image(s) into 1 cluster(s)
+
+### Argo CD applications
+
+Run this from the repository root. `assessment-test` syncs by itself. `assessment-prod` does not.
+
+```sh
+kubectl --kubeconfig .kube/config apply -f argocd/application-test.yaml
+kubectl --kubeconfig .kube/config apply -f argocd/application-prod.yaml
+kubectl --kubeconfig .kube/config get applications -n argocd
+```
+
+Expected:
+
+> NAME              SYNC STATUS   HEALTH STATUS
+> assessment-prod   OutOfSync     Missing
+> assessment-test   Synced        Progressing
+
+`assessment-test` becomes `Healthy` when its pods are `Running`. The pod names and the age can differ.
+
+```sh
+kubectl --kubeconfig .kube/config get pods -n test
+```
+
+Expected:
+
+> NAME                        READY   STATUS    RESTARTS   AGE
+> producer-6db88f774c-rldcw   1/1     Running   0          17s
+> redis-c46d5dffc-lvvfm       1/1     Running   0          17s
+> worker-86b8487c-hmdwj       1/1     Running   0          17s
 
 ### sed, only if get nodes cannot connect
 
@@ -237,7 +283,7 @@ terraform destroy
 
 Expected:
 
-> Destroy complete! Resources: 2 destroyed.
+> Destroy complete! Resources: 3 destroyed.
 
 ### Optional
 
@@ -255,14 +301,12 @@ The port can differ.
 kubectl config current-context
 ```
 
-Expected:
+This reads `~/.kube/config` and must not print `k3d-assessment`. On this PC, where no context was set, the result is:
 
 > error: current-context is not set
-
-This reads `~/.kube/config` and must not print `k3d-assessment`.
 
 ```sh
 kubectl --kubeconfig ../.kube/config get pods -A
 ```
 
-This lists `kube-system` and `argocd`. The producer and the worker are not deployed.
+This lists `kube-system`, `argocd`, and `test`. `prod` stays empty until someone syncs it.
