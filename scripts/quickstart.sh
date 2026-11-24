@@ -13,3 +13,4 @@ k3d image import assessment-worker:1.0.0 --cluster assessment --mode direct
 
 kubectl --kubeconfig .kube/config apply -f argocd/application-test.yaml
 kubectl --kubeconfig .kube/config apply -f argocd/application-prod.yaml
+kubectl --kubeconfig .kube/config apply -f argocd/application-monitoring.yaml

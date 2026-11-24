@@ -1,0 +1,20 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: assessment
+  namespace: monitoring
+spec:
+  groups:
+    - name: assessment
+      rules:
+        - alert: WorkerAtMaxReplicas
+          expr: |
+            max by (namespace) (assessment_queue_depth) > 50
+            and
+            max by (namespace) (kube_deployment_status_replicas{deployment="worker"}) >= 10
+          for: 2m
+          labels:
+            severity: warning
+          annotations:
+            summary: The worker is at 10 replicas and jobs are still waiting
+            description: Namespace {{ $labels.namespace }} has more than 50 jobs waiting while the worker is already at its maximum of 10 replicas.

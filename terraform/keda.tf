@@ -1,5 +1,5 @@
 resource "terraform_data" "keda" {
-  depends_on = [terraform_data.k3d_cluster]
+  depends_on = [terraform_data.k3d_cluster, terraform_data.argocd]
 
   provisioner "local-exec" {
     interpreter = ["bash", "-c"]
